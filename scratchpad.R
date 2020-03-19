@@ -5,6 +5,11 @@ devtools::install_github("RamiKrispin/coronavirus")
 library(coronavirus)
 
 load("c:/users/Arthur/downloads/coronavirus.rda")
+pop <- readr::read_csv("data/demographic-2019-UNFPA.csv") %>% 
+  rename(region = `Countries and areas`) %>% 
+  rename(population = 'Total population in millions, 2019') %>% 
+  select(region,population) %>% 
+  mutate(population= population * 1e6)
 
 cv_mod <- coronavirus %>%   
   dplyr::mutate(region = dplyr::if_else(Country.Region == "United Arab Emirates", "UAE", Country.Region)) %>%
@@ -29,12 +34,16 @@ cum_cases <- cv_mod %>%
   filter(cum_confirmed > 99) %>% 
   group_by(region) %>% 
   mutate(days_since_100 = as.numeric(date-min(date))) %>% 
+  left_join(pop) %>% 
+  mutate(cum_confirmed_per100k = cum_confirmed/population*100000)
   {.}
 
 
 countries_of_interest = c("Australia","Belgium","Denmark","France","Germany", "China ex Hubei","Hubei, China",
                           "Hong Kong","Iran","Italy","Korea, South","United Kingdom","Singapore","Japan", "US")
 
+countries_of_interest = c("Australia","Belgium","Denmark","France","Germany", "China ex Hubei",
+                          "Hong Kong","Iran","Italy","Korea, South","United Kingdom","Singapore","Japan", "US")
 # cum_cases %>% 
 #   # filter smaller, non-asian and china
 #   filter(region %in% countries_of_interest) %>% 
@@ -50,10 +59,12 @@ cum_cases_wide <- cum_cases %>%
   filter(region %in% countries_of_interest) %>% 
   tidyr::pivot_wider(id_cols="days_since_100",names_from = "region",values_from = "cum_confirmed")
 
+# constrain the chart a bit
+cum_cases_wide <- cum_cases_wide %>% filter(days_since_100 < 31)
 
 plot_object <- cum_cases_wide %>% 
   plotly::plot_ly(x = ~days_since_100,y = ~US,type = "scatter",mode="lines+markers",name="US") %>% 
-  plotly::layout(yaxis = list(type = "log")) %>% 
+#  plotly::layout(yaxis = list(type = "log")) %>% 
   {.}
 
 countries_of_interest[which(countries_of_interest != "US")] %>% 
