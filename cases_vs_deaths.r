@@ -3,7 +3,7 @@ library(tidyverse)
 
 # source https://github.com/nytimes/covid-19-data.git
 us_states <- read_csv("~/R Projects/covid-19-data/us-states.csv")
-us_states_live <- read_csv("~/R Projects/covid-19-data/live/us-states.csv")
+#us_states_live <- read_csv("~/R Projects/covid-19-data/live/us-states.csv")
 
 # create rolling average changes and lags
 us_states <- us_states %>% 
@@ -23,7 +23,9 @@ us_states %>%
   geom_line(aes(y=deaths*20),color="red")
 
 
-coeff = 40
+state1 = "Florida"
+
+coeff = 45
 us_states %>%  
   #filter(state %in% c("Florida","Texas","California","New York")) %>% 
   filter(state == state1) %>%
@@ -39,8 +41,9 @@ us_states %>%
   labs(title = paste(state1, "7-Day Moving Average"),
 #       subtitle = "Deaths lagged by 17 Days",
        x = "2020") +
-  geom_vline(xintercept = as.Date("2020-07-16")) + 
-  geom_vline(xintercept = as.Date("2020-07-16")+17) + 
+  geom_vline(xintercept = as.Date("2020-07-14")) + 
+  geom_vline(xintercept = as.Date("2020-07-14")+17) + 
+  annotate(geom = "text",x=Sys.Date()-35,y=11000,label = "Prediction Date") +
   NULL
 
 us_states %>%  
@@ -49,7 +52,6 @@ us_states %>%
   ggplot(aes(cases_7day,deaths_7day)) + geom_point(color="orange") + geom_smooth(method="lm")
   NULL
 
-state1 = "Florida"
   
 m <- lm(d17 ~ cases_7day+date+poly(cases_7day,2,raw = TRUE),data=filter(us_states,state==state1))
 m <- lm(d17 ~ cases_7day+date,data=filter(us_states,state==state1))
