@@ -3,6 +3,7 @@ library(tidyverse)
 
 # source https://github.com/nytimes/covid-19-data.git
 us_states <- read_csv("~/R Projects/covid-19-data/us-states.csv")
+us_states_live <- read_csv("~/R Projects/covid-19-data/live/us-states.csv")
 
 # create rolling average changes and lags
 us_states <- us_states %>% 
