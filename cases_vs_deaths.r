@@ -1,29 +1,38 @@
 # correlate deaths and cases by state
 library(tidyverse)
+library(covid19nytimes)
+
+
 
 # source https://github.com/nytimes/covid-19-data.git
-us_states <- read_csv("~/R Projects/covid-19-data/us-states.csv")
+
+us_states_long <- covid19nytimes::refresh_covid19nytimes_states()
+#us_states <- read_csv("~/R Projects/covid-19-data/us-states.csv")
 #us_states_live <- read_csv("~/R Projects/covid-19-data/live/us-states.csv")
 
 # create rolling average changes and lags
-us_states <- us_states %>% 
-  group_by(state) %>% 
-  mutate(cum_cases = cases,cum_deaths = deaths) %>% 
-  mutate(cases_7day = (cases - lag(cases,7))/7) %>% 
-  mutate(deaths_7day = (deaths - lag(deaths,7))/7) %>% 
-  mutate(d0 = deaths_7day) %>% 
-  mutate(d7 = lead(d0,7),d17 = lead(d0,17),d21=lead(d0,21))
+us_states <- us_states_long %>%
+  pivot_wider(names_from="data_type",values_from="value") %>% 
+  rename(state=location) %>%
+  select(date,state,cases_total,deaths_total) %>% 
+  group_by(state) %>%
+  mutate(cases_7day = (lag(cases_total,7) - cases_total)/7) %>%
+  mutate(deaths_7day = (lag(deaths_total,7) - deaths_total)/7) %>%
+  mutate(d0 = deaths_7day) %>%
+  mutate(d7 = lead(d0,7),d17 = lead(d0,17),d21=lead(d0,21)) %>%
+  {.}
+
 
 us_states %>% 
   filter(state %in% state.name[1:10]) %>% 
-  ggplot(aes(date,cases)) + geom_line() +
+  ggplot(aes(date,cases_total)) + geom_line() +
   facet_wrap(~state,scales = "free") +
 #  scale_y_log10() + 
   theme(legend.position = "none") +
-  geom_line(aes(y=deaths*20),color="red")
+  geom_line(aes(y=deaths_total*20),color="red")
 
 
-state1 = "Florida"
+state1 = "Texas"
 
 coeff = 45
 us_states %>%  
