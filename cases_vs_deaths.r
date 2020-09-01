@@ -19,7 +19,7 @@ us_states <- us_states_long %>%
   mutate(cases_7day = (lag(cases_total,7) - cases_total)/7) %>%
   mutate(deaths_7day = (lag(deaths_total,7) - deaths_total)/7) %>%
   mutate(d0 = deaths_7day) %>%
-  mutate(d7 = lead(d0,7),d17 = lead(d0,17),d21=lead(d0,21)) %>%
+  mutate(d7 = lag(d0,7),d17 = lag(d0,17),d21=lag(d0,21)) %>%
   {.}
 
 
@@ -32,14 +32,14 @@ us_states %>%
   geom_line(aes(y=deaths_total*20),color="red")
 
 
-state1 = "Texas"
+state1 = "Florida"
 
 coeff = 45
 us_states %>%  
   #filter(state %in% c("Florida","Texas","California","New York")) %>% 
   filter(state == state1) %>%
   ggplot(aes(date,cases_7day)) + geom_point(color="orange") +
-  geom_point(aes(y=d0*coeff),color="red") +
+  geom_point(aes(y=d17*coeff),color="red") +
   scale_y_continuous(
     name = "Cases",
     sec.axis = sec_axis(d0~./coeff,name="Deaths")) +
@@ -51,18 +51,26 @@ us_states %>%
 #       subtitle = "Deaths lagged by 17 Days",
        x = "2020") +
   geom_vline(xintercept = as.Date("2020-07-14")) + 
-  geom_vline(xintercept = as.Date("2020-07-14")+17) + 
+  geom_vline(xintercept = as.Date("2020-07-14")+21) + 
   annotate(geom = "text",x=Sys.Date()-35,y=11000,label = "Prediction Date") +
   NULL
 
-us_states %>%  
+gg <- us_states %>%  
   #filter(state %in% c("Florida","Texas","California","New York")) %>% 
   filter(state == state1) %>%
-  ggplot(aes(cases_7day,deaths_7day)) + geom_point(color="orange") + geom_smooth(method="lm")
+  ggplot(aes(cases_7day,d21)) + geom_line(color="orange") + geom_smooth(method="lm") +
   NULL
+gg
 
   
 m <- lm(d17 ~ cases_7day+date+poly(cases_7day,2,raw = TRUE),data=filter(us_states,state==state1))
-m <- lm(d17 ~ cases_7day+date,data=filter(us_states,state==state1))
-#predict(m,data.frame(cases=3000))
+m <- lm(d17 ~ cases_7day+date,dl)
 summary(m)
+
+add_regr_stats <- function(gg,show=c("rsq","slope","p","t")){
+  x <- gg$data %>% pull(str_remove_all(as.character(gg$mapping)[1],"~"))
+  y <- gg$data %>% pull(str_remove_all(as.character(gg$mapping)[2],"~"))
+  if("rsq" %in% show) rsq = cor(x,y,use="na")
+  return(gg)
+}
+
