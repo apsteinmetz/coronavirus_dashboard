@@ -67,10 +67,24 @@ m <- lm(d17 ~ cases_7day+date+poly(cases_7day,2,raw = TRUE),data=filter(us_state
 m <- lm(d17 ~ cases_7day+date,dl)
 summary(m)
 
-add_regr_stats <- function(gg,show=c("rsq","slope","p","t")){
+#add regression stats to a ggplot object
+add_regr_stats <- function(gg,show=c("rsq","slope")){
   x <- gg$data %>% pull(str_remove_all(as.character(gg$mapping)[1],"~"))
   y <- gg$data %>% pull(str_remove_all(as.character(gg$mapping)[2],"~"))
-  if("rsq" %in% show) rsq = cor(x,y,use="na")
+  regr <- lm(y~x)
+  xpos= max(x/2,na.rm = TRUE)
+  ypos= max(y/2,na.rm = TRUE)
+  if("rsq" %in% show) {
+    rsq = round(cor(x,y,use="na"),3)
+    gg <- gg + annotate(geom = "text",label=paste0("R-Sq = ",rsq),x=xpos,y=ypos)
+  }
+  if("slope" %in% show){
+    slope = round(regr$coefficients[2],3)
+    gg <- gg + annotate(geom = "text",label=paste0("Slope = ",slope),x=xpos,y=ypos+10)
+  }
   return(gg)
 }
+
+devtools::source_gist("524eade46135f6348140")
+
 
