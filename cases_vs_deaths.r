@@ -50,17 +50,23 @@ us_states %>%
   labs(title = paste(state1, "7-Day Moving Average"),
 #       subtitle = "Deaths lagged by 17 Days",
        x = "2020") +
-  geom_vline(xintercept = as.Date("2020-07-14")) + 
-  geom_vline(xintercept = as.Date("2020-07-14")+21) + 
-  annotate(geom = "text",x=Sys.Date()-35,y=11000,label = "Prediction Date") +
+#  geom_vline(xintercept = as.Date("2020-07-14")) + 
+#  geom_vline(xintercept = as.Date("2020-07-14")+21) + 
+#  annotate(geom = "text",x=Sys.Date()-35,y=11000,label = "Prediction Date") +
   NULL
 
 gg <- us_states %>%  
   #filter(state %in% c("Florida","Texas","California","New York")) %>% 
   filter(state == state1) %>%
-  ggplot(aes(cases_7day,d21)) + geom_line(color="orange") + geom_smooth(method="lm") +
+  ggplot(aes(cases_7day,d21)) + 
+  scale_x_continuous(labels =scales::comma) + 
+  geom_line(color="orange") + 
+  geom_smooth(method="lm") +
+  labs(y="Deaths Lagged 21 Days",
+       x="New Cases - 7-day Average",
+       title = "Florida Cases vs. Deaths") + 
   NULL
-gg
+gg 
 
   
 m <- lm(d17 ~ cases_7day+date+poly(cases_7day,2,raw = TRUE),data=filter(us_states,state==state1))
