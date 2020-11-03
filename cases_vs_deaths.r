@@ -1,6 +1,8 @@
 # correlate deaths and cases by state
 library(tidyverse)
 library(covid19nytimes)
+library(timetk)
+library(broom)
 
 
 
@@ -10,28 +12,67 @@ us_states_long <- covid19nytimes::refresh_covid19nytimes_states()
 #us_states <- read_csv("~/R Projects/covid-19-data/us-states.csv")
 #us_states_live <- read_csv("~/R Projects/covid-19-data/live/us-states.csv")
 
-# create rolling average changes and lags
+# Create rolling average changes and lags
 us_states <- us_states_long %>%
   pivot_wider(names_from="data_type",values_from="value") %>% 
   rename(state=location) %>%
-  select(date,state,cases_total,deaths_total) %>% 
+  select(date,state,cases_total,deaths_total) %>%
+  mutate(state = as_factor(state)) %>% 
+  arrange(state,date) %>% 
   group_by(state) %>%
+  #smooth the data with 7 day moving average
   mutate(cases_7day = (lag(cases_total,7) - cases_total)/7) %>%
   mutate(deaths_7day = (lag(deaths_total,7) - deaths_total)/7) %>%
-  mutate(d0 = deaths_7day) %>%
-  mutate(d7 = lag(d0,7),d17 = lag(d0,17),d21=lag(d0,21)) %>%
+  {.}
+ 
+us_states <- us_states %>%   
+   # create lags from 5 to 25 days
+  tk_augment_lags(deaths_7day,.lags = 5:25,.names="auto") %>% 
   {.}
 
+# make long form to nest
+models <- us_states %>% ungroup %>% 
+  pivot_longer(cols = contains("lag"),
+               names_to = "lag",
+               values_to = "lagged_deaths") %>% 
+  select(state,date,cases_7day,lag,lagged_deaths) %>% 
+  mutate(lag = as.numeric(str_remove(lag,"deaths_7day_lag"))) %>% 
+  {.}
+
+# make separate tibbles for each regresion
+models <- models %>% 
+  nest(data=c(date,cases_7day,lagged_deaths))
+
+#Run a linear regression on cases and date vs lagged deaths
+models <- models %>% 
+  mutate(model = map(data,
+                     function(df) 
+                       lm(lagged_deaths ~ cases_7day + date,data = df)))
+
+
+# Add regression coefficient
+models <- models %>% 
+  mutate(adj_r = map(model,function(x) glance(x) %>% 
+                       .$adj.r.squared) %>% unlist)
+
+# get adjusted r squared
+models <- models %>% 
+  mutate(adj_r = map(model,function(x) glance(x) %>% 
+                       pull(adj.r.squared))
+         %>% unlist)
 
 us_states %>% 
-  filter(state %in% state.name[1:10]) %>% 
+  filter(state %in% c("Florida","Texas","California","New York")) %>% 
+  #filter(state %in% state.name[1:10]) %>% 
   ggplot(aes(date,cases_total)) + geom_line() +
-  facet_wrap(~state,scales = "free") +
-#  scale_y_log10() + 
+  facet_wrap(~state,scales = "fixed") +
+#  scale_y_log10() +
+  scale_y_continuous(labels = scales::comma)
   theme(legend.position = "none") +
   geom_line(aes(y=deaths_total*20),color="red")
 
 
+  
 state1 = "Florida"
 
 coeff = 45
@@ -58,7 +99,7 @@ us_states %>%
 gg <- us_states %>%  
   #filter(state %in% c("Florida","Texas","California","New York")) %>% 
   filter(state == state1) %>%
-  ggplot(aes(cases_7day,d21)) + 
+  ggplot(aes(cases_7day,deaths_7day_lag21)) + 
   scale_x_continuous(labels =scales::comma) + 
   geom_line(color="orange") + 
   geom_smooth(method="lm") +
