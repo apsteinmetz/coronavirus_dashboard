@@ -21,13 +21,13 @@ us_states <- us_states_long %>%
   arrange(state,date) %>% 
   group_by(state) %>%
   #smooth the data with 7 day moving average
-  mutate(cases_7day = (lag(cases_total,7) - cases_total)/7) %>%
-  mutate(deaths_7day = (lag(deaths_total,7) - deaths_total)/7) %>%
+  mutate(cases_7day = (cases_total - lag(cases_total,7))/7) %>%
+  mutate(deaths_7day = (deaths_total - lag(deaths_total,7))/7) %>%
   {.}
  
 us_states <- us_states %>%   
    # create lags from 5 to 25 days
-  tk_augment_lags(deaths_7day,.lags = 5:25,.names="auto") %>% 
+  tk_augment_lags(deaths_7day,.lags = -25:-5,.names="auto") %>% 
   {.}
 
 # make long form to nest
@@ -47,7 +47,7 @@ models <- models %>%
 models <- models %>% 
   mutate(model = map(data,
                      function(df) 
-                       lm(lagged_deaths ~ cases_7day + date,data = df)))
+                       lm(lagged_deaths ~ cases_7day,data = df)))
 
 
 # Add regression coefficient
@@ -61,13 +61,18 @@ models <- models %>%
                        pull(adj.r.squared))
          %>% unlist)
 
+models %>%
+  #filter(state == "California") %>% 
+  ggplot(aes(lag,adj_r)) + geom_line() +
+  facet_wrap(~state)
+
 us_states %>% 
   filter(state %in% c("Florida","Texas","California","New York")) %>% 
   #filter(state %in% state.name[1:10]) %>% 
   ggplot(aes(date,cases_total)) + geom_line() +
   facet_wrap(~state,scales = "fixed") +
 #  scale_y_log10() +
-  scale_y_continuous(labels = scales::comma)
+  scale_y_continuous(labels = scales::comma)+
   theme(legend.position = "none") +
   geom_line(aes(y=deaths_total*20),color="red")
 
@@ -75,15 +80,17 @@ us_states %>%
   
 state1 = "Florida"
 
+
+
 coeff = 45
 us_states %>%  
   #filter(state %in% c("Florida","Texas","California","New York")) %>% 
   filter(state == state1) %>%
   ggplot(aes(date,cases_7day)) + geom_point(color="orange") +
-  geom_point(aes(y=d17*coeff),color="red") +
+  geom_point(aes(y=deaths_7day_lag17*coeff),color="red") +
   scale_y_continuous(
     name = "Cases",
-    sec.axis = sec_axis(d0~./coeff,name="Deaths")) +
+    sec.axis = sec_axis(deaths_7day_lag17~./coeff,name="Deaths")) +
   theme(
     axis.title.y = element_text(color = "orange", size=13),
     axis.title.y.right = element_text(color = "red", size=13)
@@ -132,6 +139,5 @@ add_regr_stats <- function(gg,show=c("rsq","slope")){
   return(gg)
 }
 
-devtools::source_gist("524eade46135f6348140")
 
 
