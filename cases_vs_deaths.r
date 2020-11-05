@@ -27,34 +27,30 @@ us_states <- us_states_long %>%
  
 us_states <- us_states %>%   
    # create lags from 5 to 25 days
-  tk_augment_lags(deaths_7day,.lags = -25:-5,.names="auto") %>% 
+  tk_augment_lags(cases_7day,.lags = 0:30,.names="auto") %>% 
   {.}
 
 # make long form to nest
 models <- us_states %>% ungroup %>% 
   pivot_longer(cols = contains("lag"),
                names_to = "lag",
-               values_to = "lagged_deaths") %>% 
-  select(state,date,cases_7day,lag,lagged_deaths) %>% 
-  mutate(lag = as.numeric(str_remove(lag,"deaths_7day_lag"))) %>% 
+               values_to = "lagged_cases") %>% 
+  select(state,date,deaths_7day,lag,lagged_cases) %>% 
+  mutate(lag = as.numeric(str_remove(lag,"cases_7day_lag"))) %>% 
   {.}
 
 # make separate tibbles for each regresion
 models <- models %>% 
-  nest(data=c(date,cases_7day,lagged_deaths))
+  nest(data=c(date,deaths_7day,lagged_cases))
 
-#Run a linear regression on cases and date vs lagged deaths
+#Run a linear regression on lagged cases and date vs deaths
 models <- models %>% 
   mutate(model = map(data,
                      function(df) 
-                       lm(lagged_deaths ~ cases_7day,data = df)))
+                       lm(deaths_7day ~ lagged_cases + date,data = df)))
 
 
 # Add regression coefficient
-models <- models %>% 
-  mutate(adj_r = map(model,function(x) glance(x) %>% 
-                       .$adj.r.squared) %>% unlist)
-
 # get adjusted r squared
 models <- models %>% 
   mutate(adj_r = map(model,function(x) glance(x) %>% 
@@ -62,16 +58,53 @@ models <- models %>%
          %>% unlist)
 
 models %>%
-  #filter(state == "California") %>% 
   ggplot(aes(lag,adj_r)) + geom_line() +
   facet_wrap(~state)
 
+
+# best fit lag by state
+best_fit <- models %>% 
+  group_by(state) %>% 
+  summarize(adj_r = max(adj_r)) %>% 
+  left_join(models)
+
+hist(best_fit$lag)
+
+# plot all states individually
 us_states %>% 
   filter(state %in% c("Florida","Texas","California","New York")) %>% 
   #filter(state %in% state.name[1:10]) %>% 
   ggplot(aes(date,cases_total)) + geom_line() +
   facet_wrap(~state,scales = "fixed") +
-#  scale_y_log10() +
+  #  scale_y_log10() +
+  scale_y_continuous(labels = scales::comma)+
+  theme(legend.position = "none") +
+  geom_line(aes(y=deaths_total*20),color="red")
+
+# plot entire US together.
+us_states %>% 
+  filter(state %in% c("Florida","Texas","California","New York")) %>% 
+  #filter(state %in% state.name[1:10]) %>% 
+  ggplot(aes(date,cases_total)) + geom_line() +
+  facet_wrap(~state,scales = "fixed") +
+  #  scale_y_log10() +
+  scale_y_continuous(labels = scales::comma)+
+  theme(legend.position = "none") +
+  geom_line(aes(y=deaths_total*20),color="red")
+
+
+
+
+
+
+
+# ---- old stuff ---------------
+us_states %>% 
+  filter(state %in% c("Florida","Texas","California","New York")) %>% 
+  #filter(state %in% state.name[1:10]) %>% 
+  ggplot(aes(date,cases_total)) + geom_line() +
+  facet_wrap(~state,scales = "fixed") +
+  #  scale_y_log10() +
   scale_y_continuous(labels = scales::comma)+
   theme(legend.position = "none") +
   geom_line(aes(y=deaths_total*20),color="red")
