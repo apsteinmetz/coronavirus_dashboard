@@ -1,0 +1,12 @@
+I have a macabre fascination with tracking the course of the COVID-19 pandemic.  I suspect there are two reasons for this. One, by delving into the numbers I imagine I have some control over this thing.  Second, it feels like lighting a candle to show that science can reveal truth at a time when the darkness of anti-science is creeping across the land. 
+
+The purpose of this project is, as usual, twofold.  First, to explore an interesting data science question and, second, to explore some techniques and packages in the R universe.  We will be looking at the relationship of COVID-19 cases to mortality.  What is the lag between a positive case and a death?  How does that vary among states?  How has it varied as the pandemic has progressed?
+
+I have been thinking about how to measure mortality lags for a while now.  What prompted to do a write-up was discovering a new function in Matt Dancho's `timetk` package, `tk_augment_lags`, which makes short work of building multiple lags.  Not too long ago, managing models for multiple lags and multiple states would have been a bit messy.  The emerging "tidy models" framework using "list columns" is immensely powerful for this sort of thing.  I was almost giddy ("Nerd!") when I was able to reduce so much analysis into so few lines of code.
+
+## Introduction
+
+long to wide to long workflow
+
+nest-map-unnest workflow
+
