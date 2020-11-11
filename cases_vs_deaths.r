@@ -133,6 +133,7 @@ models <- models %>%
 models %>%
   ggplot(aes(lead,adj_r)) + geom_line() +
   labs(subtitle = paste("Best fit lead =",best_fit$lead,"days"),
+       title = "Model Fit By Lag Days",
        x = "Lead Time in Days for Deaths",
        y= "Adjusted R-squared")
 
@@ -267,7 +268,17 @@ best_fit %>% ggplot(aes(lead)) +
 # ----------------------------------------------------
 # Reality check with longitudinal data from Ohio
 
+models_st %>% 
+  filter(state=="Ohio") %>% 
+  ggplot(aes(lead,adj_r)) + geom_line() +
+  labs(x = "Lead Time in Days for Deaths",
+       y= "Adjusted R-squared",
+       title = "Ohio: Model Fit by Lag Days")
+
+
 # source: https://coronavirus.ohio.gov/static/COVIDSummaryData.csv
+
+
 
 ohio_raw <- read_csv("https://coronavirus.ohio.gov/static/COVIDSummaryData.csv", 
                      col_types = cols(`Admission Date` = col_date(format = "%m/%d/%Y"), 
