@@ -7,8 +7,11 @@ library(broom)
 
 # source https://github.com/nytimes/covid-19-data.git
 us_states_long <- covid19nytimes::refresh_covid19nytimes_states()
+save(us_states_long,file="data/us_states_long.rdata")
 
 # Create rolling average changes
+# pivot wider
+# this will also be needed when we create lags
 us_states <- us_states_long %>%
   filter(date > as.Date("2020-03-01")) %>% 
   pivot_wider(names_from="data_type",values_from="value") %>% 
@@ -37,15 +40,6 @@ us <- us_states %>%
                    .fns = function(x)sum(x,na.rm = T),
                    .names="{.col}"))
 
-# does a simple scatterplot tell us anything 
-# about the relationship of deaths to cases? No.
-us %>% 
-  ggplot(aes(deaths_7day,cases_7day)) + geom_point() + geom_smooth()
-
-
-# arbitrary value that makes to make the secondary axis line up
-coeff = 30
-
 us %>% 
   ggplot(aes(date,cases_total)) + geom_line(color="orange") +
   theme(legend.position = "none") +
@@ -55,15 +49,20 @@ us %>%
                      sec.axis = sec_axis(deaths_total~./coeff,
                                          name="Deaths",
                                          labels = scales::comma)) +
-   theme(
-     axis.title.y = element_text(color = "orange", size=13),
-     axis.title.y.right = element_text(color = "red", size=13)
-   ) +
-   labs(title =  "U.S. Cases vs. Deaths",
-        x = "Date")
-  
+  theme(
+    axis.title.y = element_text(color = "orange", size=13),
+    axis.title.y.right = element_text(color = "red", size=13)
+  ) +
+  labs(title =  "U.S. Cases vs. Deaths",
+       x = "Date")
+
+# does a simple scatterplot tell us anything 
+# about the relationship of deaths to cases? No.
+us %>% 
+  ggplot(aes(deaths_7day,cases_7day)) + geom_point() + geom_smooth()
+
+
 #visualize the relationship between rolling average of weekly scases and deaths
-coeff = 30
 us %>% 
   ggplot(aes(date,cases_7day)) + geom_line(color="orange") +
   theme(legend.position = "none") +
@@ -96,24 +95,6 @@ us_lags <- us %>%
   {.}
 # fix names to remove minus sign
 names(us_lags) <- names(us_lags) %>% str_replace_all("lag-","lead")
-
-coeff = 30
-us_lags %>% 
-  ggplot(aes(date,cases_7day)) + geom_line(color="orange") +
-  theme(legend.position = "none") +
-  geom_line(aes(x=date,y=deaths_7day_lead14*coeff),color="red") +
-  scale_y_continuous(labels = scales::comma,
-                     name = "Cases",
-                     sec.axis = sec_axis(deaths_7day~./coeff,
-                                         name="Deaths",
-                                         labels = scales::comma)) +
-  theme(
-    axis.title.y = element_text(color = "orange", size=13),
-    axis.title.y.right = element_text(color = "red", size=13)
-  ) +
-  labs(title =  "U.S. Cases vs. Deaths",
-       subtitle = "7-Day Average, lead 14",
-       x = "Date")
 
 # make long form to nest
 # initialize models data frame
@@ -184,7 +165,8 @@ show_predictions <- function(single_model){
 show_predictions(best_fit)
 
 # local maximum of 14 days gives  much more satisfactory result
-show_predictions(models[14,])
+lag_override <- 14
+show_predictions(models[lag_override,])
 
 # ------------------------------------------
 # state by state analysis
@@ -193,13 +175,6 @@ show_predictions(models[14,])
 # is simpler with tidymodels to conduct a separate set of models for each state
 
 # illustrate selected states
-us_states %>% 
-  filter(state %in% c("Florida","Texas","California","New York")) %>% 
-  ggplot(aes(date,cases_total)) + geom_line() +
-  facet_wrap(~state,scales = "fixed") +
-  scale_y_continuous(labels = scales::comma)+
-  theme(legend.position = "none")
-
 us_states %>% 
   filter(state %in% c("Florida","Texas","California","Michigan")) %>% 
   ggplot(aes(date,cases_7day)) + geom_line(color="orange") +
@@ -232,7 +207,7 @@ names(us_states_lags) <- names(us_states_lags) %>% str_replace_all("lag-","lead"
 
 # make long form to nest
 # initialize models data frame
-models <- us_states_lags %>% ungroup %>% 
+models_st <- us_states_lags %>% ungroup %>% 
   pivot_longer(cols = contains("lead"),
                names_to = "lead",
                values_to = "led_deaths") %>% 
@@ -241,7 +216,7 @@ models <- us_states_lags %>% ungroup %>%
   {.}
 
 # make separate tibbles for each regression
-models <- models %>% 
+models_st <- models_st %>% 
   nest(data=c(date,cases_7day,led_deaths)) %>% 
   arrange(lead)
 
@@ -249,7 +224,7 @@ models <- models %>%
 # Polynomial degree for date.
 degree = 1
 
-models <- models %>% 
+models_st <- models_st %>% 
   mutate(model = map(data,
                      function(df) 
                        lm(led_deaths~cases_7day+poly(date,degree),data = df)))
@@ -257,22 +232,91 @@ models <- models %>%
 
 # Add regression coefficient
 # get adjusted r squared
-models <- models %>% 
+models_st <- models_st %>% 
   mutate(adj_r = map(model,function(x) glance(x) %>% 
                        pull(adj.r.squared))
          %>% unlist)
 
-models %>%
+models_st %>%
   ggplot(aes(lead,adj_r)) + geom_line() +
   facet_wrap(~state)
 
 
 # best fit lag by state
-best_fit <- models %>% 
+best_fit <- models_st %>% 
   group_by(state) %>% 
   summarize(adj_r = max(adj_r)) %>% 
-  left_join(models)
+  left_join(models_st)
 
-hist(best_fit$adj_r)
-hist(best_fit$lead)
+best_fit %>% ggplot(aes(adj_r)) + 
+  geom_histogram(bins = 10,color="white") +
+  geom_vline(xintercept = models$adj_r[lag_override],color="red") +
+  annotate(geom="text",x=0.5,y=12,label="Adj-R in National Model") +
+  labs(y = "State Count",
+       x="Adjusted R-Squared",
+       title = "Goodness of Fit of State Models",
+       caption = "Source:NY Times,My Analysis")
+
+best_fit %>% ggplot(aes(lead)) + 
+  geom_histogram(binwidth = 5,color="white") +
+  labs(y = "State Count",
+    x="Best Fit Model Days from Case to Death",
+    title = "COVID-19 Lag Time From Cases to Death",
+    caption = "Source:NY Times,My Analysis")
+
+# ----------------------------------------------------
+# Reality check with longitudinal data from Ohio
+
+# source: https://coronavirus.ohio.gov/static/COVIDSummaryData.csv
+
+ohio_raw <- read_csv("https://coronavirus.ohio.gov/static/COVIDSummaryData.csv", 
+                     col_types = cols(`Admission Date` = col_date(format = "%m/%d/%Y"), 
+                                      `Date Of Death` = col_date(format = "%m/%d/%Y"), 
+                                      `Onset Date` = col_date(format = "%m/%d/%Y")))
+
+
+fix_df_colnames <- function(df){
+  names(df)<-names(df) %>% 
+    str_replace_all(c(" " = "_" , "," = "" )) %>% 
+    tolower()
+  return(df)
+}
+
+ohio <- ohio_raw %>% 
+  fix_df_colnames() %>%
+  mutate(sex = as_factor(sex),
+         county = as_factor(county),
+         age_range = as_factor(age_range))
+
+
+ohio <- ohio %>% mutate(onset_to_death = as.numeric(date_of_death - onset_date),
+                        fatal_flag = if_else(!is.na(date_of_death),TRUE,FALSE),
+                        onset_year = year(onset_date),
+                        onset_week = epiweek(onset_date))
+  
+
+onset_to_death <- ohio %>%
+  filter(county != "Grand Total") %>% 
+  group_by(onset_year,onset_week) %>%
+  summarise(mean_onset_to_death = mean(onset_to_death,na.rm = TRUE)) %>%
+  mutate(date=as.Date(paste(onset_year,onset_week,1),"%Y %U %u")) %>% 
+  remove_missing()
+
+# helper function to annotate plots 
+pos_index <- function(index_vec,fraction){
+  return(index_vec[round(length(index_vec)*fraction)])
+}
+avg_lag <- mean(onset_to_death$mean_onset_to_death)
+onset_to_death %>% ggplot(aes(date,mean_onset_to_death)) + 
+  geom_col() +
+  geom_hline(yintercept = avg_lag) +
+  annotate(geom="text",
+           label=paste("Average Lag =",round(avg_lag)),
+           y=20,x=pos_index(onset_to_death$date,.8)) +
+  labs(x = "Onset Date",
+       y = "Mean Onset to Death",
+       title = "Ohio Days from Illness Onset Until Death Over Time",
+       subtitle = paste("Average =",
+                        round(mean(onset_to_death$mean_onset_to_death)),"Days"))
+
 
