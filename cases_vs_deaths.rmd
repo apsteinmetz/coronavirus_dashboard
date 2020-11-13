@@ -23,6 +23,10 @@ library(broom)
 
 # source https://github.com/nytimes/covid-19-data.git
 us_states_long <- covid19nytimes::refresh_covid19nytimes_states()
+
+# Remove tiny territories
+territories <- c("Guam","Northern Mariana Islands")
+us_states_long <- us_states_long %>% filter(!(location %in% territories))
 save(us_states_long,file="data/us_states_long.rdata")
 us_states_long %>% glimpse()
 ```
@@ -198,7 +202,7 @@ models %>%
 
 60 days?  Can that be right?  Let's use `predict` to see how well our model fits to the actual deaths.
 
-```{r}
+```{r message=FALSE, warning=FALSE}
 # ------------------------------------------
 # see how well our model predicts
 # Function to create prediction plot
@@ -241,23 +245,22 @@ What to do?  A glance at the model fit plot above shows a local maximum fit at 1
 lag_override <- 14
 show_predictions(models[lag_override,],lag_override)
 ```
-This is a much more sensible result, and sadly shows deaths about to spike. This is despite accounting for the improvements in treatment outcomes we've accomplished over the past several months.  The 14-day lead time model shows a 2% mortality rate over the whole length of observations but conditioned on deaths dropping by 6 cases each day.
+This is a much more sensible result, and sadly shows deaths about to spike. This is despite accounting for the improvements in treatment outcomes we've accomplished over the past several months.  The 14-day lead time model shows a 2% mortality rate over the whole length of observations but conditioned on deaths dropping by 6 cases each day time passes.
 
 ```{r}
 models[14,]$model[[1]] %>% tidy()
 ```
-
-
-```{r}
+## State-Level Analysis
+The big problem with the national model is each state saw the arrival of the virus at different times, which suggests there might also be different relationships between cases and deaths.  Looking at a few selected states illustrates this.
+```{r warning=FALSE}
 # ------------------------------------------
 # state by state analysis
-# states hit their peaks (to date) at very different times, making state
-# a useful feature. We could use one dummy variable for each state but it
-# is simpler with tidymodels to conduct a separate set of models for each state
+
+state_subset <- c("New York","Texas","California","Ohio")
 
 # illustrate selected states
 us_states %>% 
-  filter(state %in% c("Florida","Texas","California","Michigan")) %>% 
+  filter(state %in% state_subset) %>% 
   ggplot(aes(date,cases_7day)) + geom_line(color="orange") +
   facet_wrap(~state,scales = "free") +
   theme(legend.position = "none") +
@@ -275,15 +278,25 @@ us_states %>%
        subtitle = "7-Day Average",
        x = "Date")
 ```
+In particular we note New York, where the virus arrived early and circulated undetected for weeks. Testing was rare and we did not know much about the course of the disease so the death toll was much worse.  Tests were often not conducted until the disease was in advance stages so we would expect the lag to be shorter.
 
+In Texas, the virus arrived later.  There it looks like the consequences of the first wave were less dire and the lag was longer.
+
+Now we can run the same workflow we used above over the state-by-state data.  Our data set is much larger because we have a full set of lags for each state but building our data frame of list columns is just as easy.  
+
+1. Create the lags.
+2. Pivot to long form.
+3. `nest` the data by lead day and state.
+4. `map` each set to a linear model.
+5. Pull out the adjusted R-Squared for each model to determine the best fit lead time.
+
+Looking at the lags by state shows much better behaved data.  The R-squareds seem higher and the optimal lead time is more clearly visible.  Early in the pandemic, in New York, cases were diagnosed only for people who were already sick so, as we suspected, the lead time before death was much shorter.
 
 ```{r message=FALSE, warning=FALSE}
 # create lags
 us_states_lags <- us_states %>%
   # create lags by day
   tk_augment_lags(deaths_7day,.lags = -60:0,.names="auto") %>% 
-  # create lags by week is using weekly data
-  # tk_augment_lags(deaths_7day,.lags = -8:0,.names="auto") %>% 
   {.}
 # fix names to remove minus sign
 names(us_states_lags) <- names(us_states_lags) %>% str_replace_all("lag-","lead")
@@ -304,13 +317,10 @@ models_st <- models_st %>%
   arrange(lead)
 
 #Run a linear regression on lagged cases and date vs deaths
-# Polynomial degree for date.
-degree = 1
-
 models_st <- models_st %>% 
   mutate(model = map(data,
                      function(df) 
-                       lm(led_deaths~cases_7day+poly(date,degree),data = df)))
+                       lm(led_deaths~cases_7day+date,data = df)))
 
 
 # Add regression coefficient
@@ -321,12 +331,13 @@ models_st <- models_st %>%
          %>% unlist)
 
 models_st %>%
+  filter(state %in% state_subset) %>% 
   ggplot(aes(lead,adj_r)) + geom_line() +
   facet_wrap(~state)
 ```
 
-
-```{r}
+To see how the fit looks for the data set as a whole we look at a histogram of all the state R-squareds.  We see most of the state models do a better job than the national model.
+```{r message=FALSE, warning=FALSE}
 # best fit lag by state
 best_fit_st <- models_st %>% 
   group_by(state) %>% 
@@ -336,14 +347,14 @@ best_fit_st <- models_st %>%
 best_fit_st %>% ggplot(aes(adj_r)) + 
   geom_histogram(bins = 10,color="white") +
   geom_vline(xintercept = models$adj_r[lag_override],color="red") +
-  annotate(geom="text",x=0.5,y=12,label="Adj-R in National Model") +
+  annotate(geom="text",x=0.45,y=12,label="Adj-R in National Model") +
   labs(y = "State Count",
        x="Adjusted R-Squared",
        title = "Goodness of Fit of State Models",
        caption = "Source:NY Times,My Analysis")
 ```
 
-
+We also see a clear clustering of the case-to-death best-fit lead time among the states.  Around 15 days from a positive test to death is most common.
 ```{r}
 best_fit_st %>% ggplot(aes(lead)) + 
   geom_histogram(binwidth = 5,color="white") +
@@ -353,17 +364,10 @@ best_fit_st %>% ggplot(aes(lead)) +
     caption = "Source:NY Times,My Analysis")
 ```
 
-
+This whole exercise has involved proxying deaths by time and quantity of positive tests.  Ideally, we should look at longitudinal data which follows each individual.  The state of Ohio provides that so we'll look at just this one state to provide a reality check on the foregoing analysis.  The fit of our Ohio model is not among our strongest but the best-fit lead time is 20 days.
 ```{r}
 # ----------------------------------------------------
-# Reality check with longitudinal data from Ohio
-
-models_st %>% 
-  filter(state=="Ohio") %>% 
-  ggplot(aes(lead,adj_r)) + geom_line() +
-  labs(x = "Lead Time in Days for Deaths",
-       y= "Adjusted R-squared",
-       title = "Ohio: Model Fit by Lag Days")
+best_fit_st %>% select(-data,-model) %>% filter(state == "Ohio")
 ```
 
 
